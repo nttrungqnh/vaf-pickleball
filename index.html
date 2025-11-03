@@ -148,6 +148,7 @@
             <tr>
               <th>Thành viên</th>
               <th>Tổng</th>
+              <th>#</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -162,7 +163,7 @@
   <!-- Firebase + Logic -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getFirestore, collection, getDocs, addDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+    import { getFirestore, collection, getDocs, addDoc, deleteDoc, doc, updateDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
     const firebaseConfig = {
@@ -213,12 +214,13 @@
 
       for (const s of sessions) {
         const feesSnap = await getDocs(collection(db, "sessions", s.id, "fees"));
+        const unpaidFees = feesSnap.docs.filter(feeDoc => !(feeDoc.data().isThanhToan));
         const col = document.createElement("div");
         col.className = "col-12 col-md-6 col-lg-4 col-xl-2";
         const isAdmin = currentUser && currentUser.uid === ADMIN_UID;
 
         let feesHTML = "";
-        feesSnap.forEach(f => {
+        unpaidFees.forEach(f => {
           const data = f.data();
           if (!data.ten || !data.tongtien || !memberNames.has(data.ten)) return;
 
@@ -266,12 +268,21 @@
         sessionsDiv.appendChild(col);
       }
 
-      Object.entries(totals).forEach(([name, total]) => {
+      const sortedTotals = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+
+      sortedTotals.forEach(([name, total]) => {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${name}</td><td>${formatVND(total)}</td>`;
+        tr.innerHTML = `
+    <td>${name}</td>
+    <td>${formatVND(total)}</td>
+    <td>
+      <button class="btn btn-sm btn-outline-primary" onclick="tatToan('${name}')">
+        Tất toán
+      </button>
+    </td>
+  `;
         summaryBody.appendChild(tr);
       });
-
       isLoading = false;
     }
 
@@ -294,7 +305,7 @@
       const amount = Number(document.getElementById(`amount-${id}`).value);
       if (!name || isNaN(amount)) return alert("Chọn tên và nhập số tiền hợp lệ!");
       if (!memberNames.has(name)) return alert("Tên chưa tồn tại trong danh sách thành viên!");
-      await addDoc(collection(db, "sessions", id, "fees"), { ten: name, tongtien: amount });
+      await addDoc(collection(db, "sessions", id, "fees"), { ten: name, tongtien: amount, isThanhToan: false });
       await loadData();
     };
 
@@ -323,6 +334,27 @@
       if (!confirm("Xóa người này?")) return;
       await deleteDoc(doc(db, "sessions", sessionId, "fees", feeId));
       await loadData();
+    };
+
+
+    // 🔥 Tất toán cho 1 thành viên (cập nhật tất cả fees của người đó)
+    window.tatToan = async function (name) {
+      if (!confirm(`Bạn có chắc muốn tất toán cho ${name}?`)) return;
+
+      const sessionsSnap = await getDocs(collection(db, "sessions"));
+      for (const sessionDoc of sessionsSnap.docs) {
+        const feesSnap = await getDocs(collection(db, "sessions", sessionDoc.id, "fees"));
+        for (const feeDoc of feesSnap.docs) {
+          const data = feeDoc.data();
+          if (data.ten === name && !data.isThanhToan) {
+            const feeRef = doc(db, "sessions", sessionDoc.id, "fees", feeDoc.id);
+            await updateDoc(feeRef, { isThanhToan: true }); // ✅ dùng updateDoc()
+          }
+        }
+      }
+
+      alert(`✅ Đã tất toán cho ${name}`);
+      loadData();
     };
 
     // 👤 Login
