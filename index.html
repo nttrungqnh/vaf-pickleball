@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>CLB Pickleball - Quản lý sinh hoạt</title>
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+  <style>
+    body {
+      background: linear-gradient(180deg, #eaf3ff 0%, #f8fbff 100%);
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: #003366;
+    }
+
+    h1 {
+      color: #004a99;
+    }
+
+    .session-card {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+      padding: 1rem;
+      transition: 0.2s ease;
+      height: 100%;
+    }
+
+    .session-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+    }
+
+    .session-title {
+      font-size: 1.1rem;
+      color: #004a99;
+      font-weight: 600;
+      margin-bottom: 0;
+    }
+
+    .session-date {
+      font-size: 0.85rem;
+      color: #777;
+    }
+
+    .btn-delete,
+    .btn-small-del {
+      border: none;
+      background: transparent;
+      color: #dc3545;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .btn-delete:hover,
+    .btn-small-del:hover {
+      color: #a71d2a;
+    }
+
+    .add-fee {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      flex-wrap: nowrap;
+      align-items: center;
+    }
+
+    .add-fee input,
+    .add-fee select {
+      flex: 1 1 auto;
+    }
+
+    .add-fee button {
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    table {
+      font-size: 0.9rem;
+    }
+
+    #summary {
+      border-top: 3px solid #004a99;
+    }
+
+    .add-fee .form-control {
+      max-width: 45%;
+    }
+
+    table.table-sm th,
+    table.table-sm td {
+      padding: 0.25rem 0.5rem;
+      /* giảm padding trên/dưới */
+      font-size: 0.85rem;
+      /* nhỏ font hơn chút nếu muốn */
+      line-height: 1.2;
+      /* khoảng cách dòng */
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container-fluid py-4">
+    <h1 class="text-center fw-bold mb-4">Quản lý sinh hoạt CLB VAF Pickleball</h1>
+
+    <!-- Thanh công cụ -->
+    <div class="d-flex justify-content-end align-items-center mb-4 gap-2 flex-wrap">
+      <span id="user-info" class="fw-semibold text-primary"></span>
+      <button id="login-btn" class="btn btn-primary btn-sm" onclick="login()">Đăng nhập Google</button>
+      <button id="logout-btn" class="btn btn-danger btn-sm d-none" onclick="logout()">Đăng xuất</button>
+    </div>
+
+    <!-- Khu vực thêm thành viên và tạo buổi -->
+    <div id="admin-section" class="text-center mb-4 d-none">
+
+      <!-- Thêm thành viên -->
+      <div
+        class="bg-white shadow-sm rounded p-3 d-inline-flex align-items-center gap-2 flex-wrap justify-content-center border border-success-subtle mb-2">
+        <input type="text" id="newMemberName" class="form-control form-control-sm w-auto"
+          placeholder="Tên thành viên" />
+        <button class="btn btn-outline-primary btn-sm" onclick="addMember()">➕ Thêm thành viên</button>
+      </div>
+
+      <!-- Thêm buổi -->
+      <div
+        class="bg-white shadow-sm rounded p-3 d-inline-flex align-items-center gap-2 flex-wrap justify-content-center border border-primary-subtle">
+        <input type="text" id="newName" class="form-control form-control-sm w-auto"
+          placeholder="Tên buổi (VD: CN sáng)" />
+        <input type="date" id="newDate" class="form-control form-control-sm w-auto" />
+        <button class="btn btn-outline-primary btn-sm" onclick="addSession()">➕ Tạo buổi</button>
+      </div>
+    </div>
+
+    <!-- Danh sách buổi -->
+    <div id="sessions" class="row row-cols-1 row-cols-md-3 row-cols-lg-3 g-3" style="min-height: 200px;">
+      <!-- JS render vào đây -->
+    </div>
+
+    <!-- Tổng kết -->
+    <div id="summary" class="bg-white shadow-sm rounded p-3 mt-4">
+      <h4 class="text-primary mb-3 fw-semibold">💰 Tổng tiền từng thành viên</h4>
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover table-sm align-middle text-center mb-0">
+          <thead class="table-primary">
+            <tr>
+              <th>Thành viên</th>
+              <th>Tổng</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Firebase + Logic -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getFirestore, collection, getDocs, addDoc, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCnUJ4PUw8f4usZdBmuSuhCH8GvR0PdD5Y",
+      authDomain: "pickleball-fee-tracker.firebaseapp.com",
+      projectId: "pickleball-fee-tracker",
+      storageBucket: "pickleball-fee-tracker.firebasestorage.app",
+      messagingSenderId: "874940793189",
+      appId: "1:874940793189:web:2a003b4c5ea7f07bcb618c"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+    const ADMIN_UID = "w9vbMAKIlfWDPWkYVKMHEyRq8wF3";
+
+    let currentUser = null;
+    let isLoading = false;
+    let memberNames = new Set();
+
+    const formatVND = n => Number(n).toLocaleString("vi-VN") + "đ";
+
+    // 🔁 Load dữ liệu
+    async function loadData() {
+      if (isLoading) return;
+      isLoading = true;
+
+      const sessionsDiv = document.getElementById("sessions");
+      const summaryBody = document.querySelector("#summary tbody");
+      sessionsDiv.innerHTML = "";
+      summaryBody.innerHTML = "";
+
+      const totals = {};
+      memberNames.clear();
+
+      // Lấy danh sách tên thành viên từ collection 'members'
+      const memberSnap = await getDocs(collection(db, "members"));
+      memberSnap.forEach(doc => {
+        const data = doc.data();
+        if (data.ten) memberNames.add(data.ten);
+      });
+
+      const sessionSnap = await getDocs(collection(db, "sessions"));
+      const sessions = [];
+      sessionSnap.forEach(docSnap => sessions.push({ id: docSnap.id, ...docSnap.data() }));
+      sessions.sort((a, b) => (b.ngay || "").localeCompare(a.ngay || ""));
+
+      for (const s of sessions) {
+        const feesSnap = await getDocs(collection(db, "sessions", s.id, "fees"));
+        const col = document.createElement("div");
+        col.className = "col-12 col-md-6 col-lg-4 col-xl-2";
+        const isAdmin = currentUser && currentUser.uid === ADMIN_UID;
+
+        let feesHTML = "";
+        feesSnap.forEach(f => {
+          const data = f.data();
+          if (!data.ten || !data.tongtien || !memberNames.has(data.ten)) return;
+
+          feesHTML += `
+            <tr>
+              <td>${data.ten}</td>
+              <td>${formatVND(data.tongtien)}</td>
+              ${isAdmin ? `<td><button class="btn-small-del" onclick="deleteFee('${s.id}', '${f.id}')">✖</button></td>` : ""}
+            </tr>`;
+          totals[data.ten] = (totals[data.ten] || 0) + Number(data.tongtien);
+        });
+        const formattedDate = s.ngay
+          ? new Date(s.ngay).toLocaleDateString("vi-VN")
+          : "";
+        col.innerHTML = `
+          <div class="session-card h-100 d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div>
+                <h5 class="session-title">${s.ghichu || "Không tên"}</h5>
+                <small class="session-date">${formattedDate || ""}</small>
+              </div>
+              ${isAdmin ? `<button class="btn-delete" onclick="deleteSession('${s.id}')">✖</button>` : ""}
+            </div>
+
+            <div class="table-responsive mb-2 flex-grow-1">
+              <table class="table table-sm table-bordered align-middle text-center mb-0">
+                <thead class="table-light">
+                  <tr><th>Thành viên</th><th>Số tiền</th>${isAdmin ? "<th></th>" : ""}</tr>
+                </thead>
+                <tbody>${feesHTML}</tbody>
+              </table>
+            </div>
+
+            ${isAdmin ? `
+            <div class="add-fee" id="fee-form-${s.id}">
+              <select id="name-${s.id}" class="form-control form-control-sm">
+                <option value="">-- Chọn--</option>
+                ${[...memberNames].map(name => `<option value="${name}">${name}</option>`).join('')}
+              </select>
+              <input type="number" placeholder="Số tiền" id="amount-${s.id}" class="form-control form-control-sm" />
+              <button class="btn btn-sm" onclick="addFee('${s.id}')">➕</button>
+            </div>` : ""}
+          </div>
+        `;
+        sessionsDiv.appendChild(col);
+      }
+
+      Object.entries(totals).forEach(([name, total]) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${name}</td><td>${formatVND(total)}</td>`;
+        summaryBody.appendChild(tr);
+      });
+
+      isLoading = false;
+    }
+
+    // ➕ Thêm thành viên
+    window.addMember = async () => {
+      const name = document.getElementById("newMemberName").value.trim();
+      if (!name) return alert("Nhập tên thành viên!");
+      try {
+        await addDoc(collection(db, "members"), { ten: name });
+        document.getElementById("newMemberName").value = "";
+        await loadData();
+      } catch (err) {
+        alert("Lỗi thêm thành viên: " + err.message);
+      }
+    };
+
+    // ➕ Thêm fee
+    window.addFee = async id => {
+      const name = document.getElementById(`name-${id}`).value.trim();
+      const amount = Number(document.getElementById(`amount-${id}`).value);
+      if (!name || isNaN(amount)) return alert("Chọn tên và nhập số tiền hợp lệ!");
+      if (!memberNames.has(name)) return alert("Tên chưa tồn tại trong danh sách thành viên!");
+      await addDoc(collection(db, "sessions", id, "fees"), { ten: name, tongtien: amount });
+      await loadData();
+    };
+
+    // ➕ Tạo buổi
+    window.addSession = async () => {
+      const ghichu = document.getElementById("newName").value.trim();
+      const ngay = document.getElementById("newDate").value.trim();
+      if (!ghichu || !ngay) return alert("Nhập đủ thông tin!");
+      await addDoc(collection(db, "sessions"), { ghichu, ngay });
+      document.getElementById("newName").value = "";
+      document.getElementById("newDate").value = "";
+      await loadData();
+    };
+
+    // ❌ Xóa buổi
+    window.deleteSession = async id => {
+      if (!confirm("Xóa buổi này?")) return;
+      const feesSnap = await getDocs(collection(db, "sessions", id, "fees"));
+      for (const f of feesSnap.docs) await deleteDoc(doc(db, "sessions", id, "fees", f.id));
+      await deleteDoc(doc(db, "sessions", id));
+      await loadData();
+    };
+
+    // ❌ Xóa fee
+    window.deleteFee = async (sessionId, feeId) => {
+      if (!confirm("Xóa người này?")) return;
+      await deleteDoc(doc(db, "sessions", sessionId, "fees", feeId));
+      await loadData();
+    };
+
+    // 👤 Login
+    window.login = async () => {
+      try { await signInWithPopup(auth, provider); }
+      catch (err) { alert("Lỗi đăng nhập: " + err.message); }
+    };
+    window.logout = async () => signOut(auth);
+
+    // 🔄 Theo dõi đăng nhập
+    onAuthStateChanged(auth, user => {
+      const admin = document.getElementById("admin-section");
+      const loginBtn = document.getElementById("login-btn");
+      const logoutBtn = document.getElementById("logout-btn");
+      const userInfo = document.getElementById("user-info");
+      currentUser = user || null;
+
+      if (user) {
+        userInfo.textContent = `👋 ${user.displayName}`;
+        loginBtn.classList.add("d-none");
+        logoutBtn.classList.remove("d-none");
+        admin.classList.toggle("d-none", user.uid !== ADMIN_UID);
+      } else {
+        userInfo.textContent = "";
+        loginBtn.classList.remove("d-none");
+        logoutBtn.classList.add("d-none");
+        admin.classList.add("d-none");
+      }
+      loadData();
+    });
+  </script>
+</body>
+
+</html>
