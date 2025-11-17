@@ -60,44 +60,34 @@
       color: #a71d2a;
     }
 
-    .add-fee {
-      display: flex;
-      gap: 6px;
-      margin-top: 8px;
-      flex-wrap: nowrap;
-      align-items: center;
-    }
-
-    .add-fee input,
-    .add-fee select {
-      flex: 1 1 auto;
-    }
-
-    .add-fee button {
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    table {
-      font-size: 0.9rem;
-    }
-
-    #summary {
-      border-top: 3px solid #004a99;
-    }
-
-    .add-fee .form-control {
-      max-width: 45%;
-    }
-
     table.table-sm th,
     table.table-sm td {
       padding: 0.25rem 0.5rem;
-      /* giảm padding trên/dưới */
       font-size: 0.85rem;
-      /* nhỏ font hơn chút nếu muốn */
       line-height: 1.2;
-      /* khoảng cách dòng */
+    }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.4);
+      justify-content: center;
+      align-items: center;
+      z-index: 999;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 450px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
     }
   </style>
 </head>
@@ -113,9 +103,8 @@
       <button id="logout-btn" class="btn btn-danger btn-sm d-none" onclick="logout()">Đăng xuất</button>
     </div>
 
-    <!-- Khu vực thêm thành viên và tạo buổi -->
+    <!-- Khu vực Admin -->
     <div id="admin-section" class="text-center mb-4 d-none">
-
       <!-- Thêm thành viên -->
       <div
         class="bg-white shadow-sm rounded p-3 d-inline-flex align-items-center gap-2 flex-wrap justify-content-center border border-success-subtle mb-2">
@@ -135,9 +124,7 @@
     </div>
 
     <!-- Danh sách buổi -->
-    <div id="sessions" class="row row-cols-1 row-cols-md-3 row-cols-lg-3 g-3" style="min-height: 200px;">
-      <!-- JS render vào đây -->
-    </div>
+    <div id="sessions" class="row row-cols-1 row-cols-md-3 row-cols-lg-3 g-3" style="min-height: 200px;"></div>
 
     <!-- Tổng kết -->
     <div id="summary" class="bg-white shadow-sm rounded p-3 mt-4">
@@ -157,10 +144,7 @@
     </div>
   </div>
 
-  <!-- Bootstrap Bundle -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-  <!-- Firebase + Logic -->
+  <!-- Firebase Logic -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
     import { getFirestore, collection, getDocs, addDoc, deleteDoc, doc, updateDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
@@ -179,15 +163,15 @@
     const db = getFirestore(app);
     const auth = getAuth(app);
     const provider = new GoogleAuthProvider();
-    const ADMIN_UID = "w9vbMAKIlfWDPWkYVKMHEyRq8wF3";
 
+    const ADMIN_UID = "w9vbMAKIlfWDPWkYVKMHEyRq8wF3";
     let currentUser = null;
     let isLoading = false;
     let memberNames = new Set();
 
     const formatVND = n => Number(n).toLocaleString("vi-VN") + "đ";
 
-    // 🔁 Load dữ liệu
+    /* ------------------ Load dữ liệu chính ------------------ */
     async function loadData() {
       if (isLoading) return;
       isLoading = true;
@@ -196,196 +180,248 @@
       const summaryBody = document.querySelector("#summary tbody");
       sessionsDiv.innerHTML = "";
       summaryBody.innerHTML = "";
-
       const totals = {};
       memberNames.clear();
 
-      // Lấy danh sách tên thành viên từ collection 'members'
       const memberSnap = await getDocs(collection(db, "members"));
       memberSnap.forEach(doc => {
-        const data = doc.data();
-        if (data.ten) memberNames.add(data.ten);
+        const d = doc.data();
+        if (d.ten) memberNames.add(d.ten);
       });
 
       const sessionSnap = await getDocs(collection(db, "sessions"));
       const sessions = [];
-      sessionSnap.forEach(docSnap => sessions.push({ id: docSnap.id, ...docSnap.data() }));
-      sessions.sort((a, b) => (b.ngay || "").localeCompare(a.ngay || ""));
+      sessionSnap.forEach(s => sessions.push({ id: s.id, ...s.data() }));
+      sessions.sort((a, b) => (b.ngay || "").localeCompare(a.ngay || "")); // mới nhất lên đầu
 
       for (const s of sessions) {
         const feesSnap = await getDocs(collection(db, "sessions", s.id, "fees"));
-        const unpaidFees = feesSnap.docs.filter(feeDoc => !(feeDoc.data().isThanhToan));
+        const unpaid = feesSnap.docs.filter(f => !f.data().isThanhToan);
+
         const col = document.createElement("div");
         col.className = "col-12 col-md-6 col-lg-4 col-xl-2";
-        const isAdmin = currentUser && currentUser.uid === ADMIN_UID;
 
-        let feesHTML = "";
-        unpaidFees.forEach(f => {
-          const data = f.data();
-          if (!data.ten || !data.tongtien || !memberNames.has(data.ten)) return;
-
-          feesHTML += `
+        let rows = "";
+        unpaid.forEach(f => {
+          const d = f.data();
+          if (!d.ten || !memberNames.has(d.ten)) return;
+          totals[d.ten] = (totals[d.ten] || 0) + Number(d.tongtien);
+          rows += `
             <tr>
-              <td>${data.ten}</td>
-              <td>${formatVND(data.tongtien)}</td>
-              ${isAdmin ? `<td><button class="btn-small-del" onclick="deleteFee('${s.id}', '${f.id}')">✖</button></td>` : ""}
+              <td>${d.ten}</td>
+              <td>${formatVND(d.tongtien)}</td>
+              ${currentUser?.uid === ADMIN_UID ? `<td><button class="btn-small-del" onclick="deleteFee('${s.id}', '${f.id}')">✖</button></td>` : ""}
             </tr>`;
-          totals[data.ten] = (totals[data.ten] || 0) + Number(data.tongtien);
         });
-        const formattedDate = s.ngay
-          ? new Date(s.ngay).toLocaleDateString("vi-VN")
-          : "";
+
+        const dateFmt = formatDateDDMMYYYY(s.ngay);
         col.innerHTML = `
-          <div class="session-card h-100 d-flex flex-column">
-            <div class="d-flex justify-content-between align-items-start mb-2">
-              <div>
-                <h5 class="session-title">${s.ghichu || "Không tên"}</h5>
-                <small class="session-date">${formattedDate || ""}</small>
-              </div>
-              ${isAdmin ? `<button class="btn-delete" onclick="deleteSession('${s.id}')">✖</button>` : ""}
+        <div class="session-card h-100">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div>
+              <h5 class="session-title">${s.ghichu || "Không tên"}</h5>
+              <small class="session-date">${dateFmt}</small>
             </div>
-
-            <div class="table-responsive mb-2 flex-grow-1">
-              <table class="table table-sm table-bordered align-middle text-center mb-0">
-                <thead class="table-light">
-                  <tr><th>Thành viên</th><th>Số tiền</th>${isAdmin ? "<th></th>" : ""}</tr>
-                </thead>
-                <tbody>${feesHTML}</tbody>
-              </table>
-            </div>
-
-            ${isAdmin ? `
-            <div class="add-fee" id="fee-form-${s.id}">
-              <select id="name-${s.id}" class="form-control form-control-sm">
-                <option value="">-- Chọn--</option>
-                ${[...memberNames].map(name => `<option value="${name}">${name}</option>`).join('')}
-              </select>
-              <input type="number" placeholder="Số tiền" id="amount-${s.id}" class="form-control form-control-sm" />
-              <button class="btn btn-sm" onclick="addFee('${s.id}')">➕</button>
-            </div>` : ""}
+            ${currentUser?.uid === ADMIN_UID ? `<button class="btn-delete" onclick="deleteSession('${s.id}')">✖</button>` : ""}
           </div>
-        `;
+
+          <table class="table table-sm table-bordered text-center mb-2">
+            <thead class="table-light"><tr><th>Thành viên</th><th>Số tiền</th>${currentUser?.uid === ADMIN_UID ? "<th></th>" : ""}</tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+
+          ${currentUser?.uid === ADMIN_UID ? `
+          <div class="d-flex gap-1">
+            <select id="name-${s.id}" class="form-control form-control-sm">
+              <option value="">-- Chọn --</option>
+              ${[...memberNames].map(n => `<option value="${n}">${n}</option>`).join("")}
+            </select>
+            <input type="number" id="amount-${s.id}" class="form-control form-control-sm" placeholder="Số tiền">
+            <button class="btn btn-sm" onclick="addFee('${s.id}')">➕</button>
+          </div>` : ""}
+        </div>`;
         sessionsDiv.appendChild(col);
       }
 
-      const sortedTotals = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+      Object.entries(totals).sort((a, b) => b[1] - a[1]).forEach(([name, total]) => {
+         const tr = document.createElement("tr");
 
-      sortedTotals.forEach(([name, total]) => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-    <td>${name}</td>
-    <td>${formatVND(total)}</td>
-    <td>
-      <button class="btn btn-sm btn-outline-primary" onclick="tatToan('${name}')">
-        Tất toán
-      </button>
-    </td>
-  `;
-        summaryBody.appendChild(tr);
+    // Nút tất toán chỉ admin
+    const tatToanBtn = currentUser && currentUser.uid === ADMIN_UID
+      ? `<button class="btn btn-sm btn-outline-primary" onclick="tatToan('${name}')">Tất toán</button>`
+      : "";
+
+    // Nút lịch sử ai cũng xem được
+    const lichSuBtn = `<button class="btn btn-sm btn-outline-secondary" onclick="xemLichSu('${name}')">Lịch sử</button>`;
+
+    tr.innerHTML = `
+      <td>${name}</td>
+      <td>${formatVND(total)}</td>
+      <td>${tatToanBtn} ${lichSuBtn}</td>
+    `;
+    summaryBody.appendChild(tr);
       });
+
       isLoading = false;
     }
 
-    // ➕ Thêm thành viên
+    /* ------------------ CRUD ------------------ */
     window.addMember = async () => {
       const name = document.getElementById("newMemberName").value.trim();
-      if (!name) return alert("Nhập tên thành viên!");
-      try {
-        await addDoc(collection(db, "members"), { ten: name });
-        document.getElementById("newMemberName").value = "";
-        await loadData();
-      } catch (err) {
-        alert("Lỗi thêm thành viên: " + err.message);
-      }
+      if (!name) return alert("Nhập tên!");
+      await addDoc(collection(db, "members"), { ten: name });
+      document.getElementById("newMemberName").value = "";
+      loadData();
     };
 
-    // ➕ Thêm fee
     window.addFee = async id => {
       const name = document.getElementById(`name-${id}`).value.trim();
       const amount = Number(document.getElementById(`amount-${id}`).value);
-      if (!name || isNaN(amount)) return alert("Chọn tên và nhập số tiền hợp lệ!");
-      if (!memberNames.has(name)) return alert("Tên chưa tồn tại trong danh sách thành viên!");
+      if (!name || isNaN(amount)) return alert("Chọn tên và nhập tiền!");
       await addDoc(collection(db, "sessions", id, "fees"), { ten: name, tongtien: amount, isThanhToan: false });
-      await loadData();
+      loadData();
     };
 
-    // ➕ Tạo buổi
     window.addSession = async () => {
       const ghichu = document.getElementById("newName").value.trim();
       const ngay = document.getElementById("newDate").value.trim();
-      if (!ghichu || !ngay) return alert("Nhập đủ thông tin!");
+      if (!ghichu || !ngay) return alert("Nhập đủ!");
       await addDoc(collection(db, "sessions"), { ghichu, ngay });
       document.getElementById("newName").value = "";
       document.getElementById("newDate").value = "";
-      await loadData();
+      loadData();
     };
 
-    // ❌ Xóa buổi
     window.deleteSession = async id => {
       if (!confirm("Xóa buổi này?")) return;
-      const feesSnap = await getDocs(collection(db, "sessions", id, "fees"));
-      for (const f of feesSnap.docs) await deleteDoc(doc(db, "sessions", id, "fees", f.id));
+      const fees = await getDocs(collection(db, "sessions", id, "fees"));
+      for (const f of fees.docs) await deleteDoc(doc(db, "sessions", id, "fees", f.id));
       await deleteDoc(doc(db, "sessions", id));
-      await loadData();
+      loadData();
     };
 
-    // ❌ Xóa fee
-    window.deleteFee = async (sessionId, feeId) => {
+    window.deleteFee = async (id, fid) => {
       if (!confirm("Xóa người này?")) return;
-      await deleteDoc(doc(db, "sessions", sessionId, "fees", feeId));
-      await loadData();
+      await deleteDoc(doc(db, "sessions", id, "fees", fid));
+      loadData();
     };
 
-
-    // 🔥 Tất toán cho 1 thành viên (cập nhật tất cả fees của người đó)
-    window.tatToan = async function (name) {
-      if (!confirm(`Bạn có chắc muốn tất toán cho ${name}?`)) return;
-
-      const sessionsSnap = await getDocs(collection(db, "sessions"));
-      for (const sessionDoc of sessionsSnap.docs) {
-        const feesSnap = await getDocs(collection(db, "sessions", sessionDoc.id, "fees"));
-        for (const feeDoc of feesSnap.docs) {
-          const data = feeDoc.data();
-          if (data.ten === name && !data.isThanhToan) {
-            const feeRef = doc(db, "sessions", sessionDoc.id, "fees", feeDoc.id);
-            await updateDoc(feeRef, { isThanhToan: true }); // ✅ dùng updateDoc()
+    window.tatToan = async name => {
+      if (!confirm(`Tất toán cho ${name}?`)) return;
+      const sessions = await getDocs(collection(db, "sessions"));
+      for (const s of sessions.docs) {
+        const fees = await getDocs(collection(db, "sessions", s.id, "fees"));
+        for (const f of fees.docs) {
+          if (f.data().ten === name && !f.data().isThanhToan) {
+            await updateDoc(doc(db, "sessions", s.id, "fees", f.id), { isThanhToan: true });
           }
         }
       }
-
-      alert(`✅ Đã tất toán cho ${name}`);
       loadData();
     };
 
-    // 👤 Login
-    window.login = async () => {
-      try { await signInWithPopup(auth, provider); }
-      catch (err) { alert("Lỗi đăng nhập: " + err.message); }
-    };
-    window.logout = async () => signOut(auth);
+    /* ------------------ Modal Lịch sử ------------------ */
+    let isOpeningHistory = false;
+    window.xemLichSu = async function (name) {
+      const modal = document.getElementById("historyModal");
+      const body = document.getElementById("historyBody");
+      const totalBox = document.getElementById("historyTotal");
 
-    // 🔄 Theo dõi đăng nhập
-    onAuthStateChanged(auth, user => {
-      const admin = document.getElementById("admin-section");
-      const loginBtn = document.getElementById("login-btn");
-      const logoutBtn = document.getElementById("logout-btn");
-      const userInfo = document.getElementById("user-info");
-      currentUser = user || null;
+      // Mở modal ngay, show loading
+      modal.style.display = "flex";
+      body.innerHTML = `<tr><td colspan="3">⏳ Đang tải...</td></tr>`;
+      totalBox.innerHTML = "";
 
-      if (user) {
-        userInfo.textContent = `👋 ${user.displayName}`;
-        loginBtn.classList.add("d-none");
-        logoutBtn.classList.remove("d-none");
-        admin.classList.toggle("d-none", user.uid !== ADMIN_UID);
-      } else {
-        userInfo.textContent = "";
-        loginBtn.classList.remove("d-none");
-        logoutBtn.classList.add("d-none");
-        admin.classList.add("d-none");
+      try {
+        const sessionSnap = await getDocs(collection(db, "sessions"));
+        const feePromises = sessionSnap.docs.map(async sessionDoc => {
+          const feesSnap = await getDocs(collection(db, "sessions", sessionDoc.id, "fees"));
+          return { session: sessionDoc.data(), fees: feesSnap.docs };
+        });
+
+        const allSessions = await Promise.all(feePromises);
+
+        let total = 0;
+        let rows = "";
+
+        allSessions.forEach(({ session, fees }) => {
+          fees.forEach(f => {
+            const d = f.data();
+            if (d.ten === name && !d.isThanhToan) {
+              total += Number(d.tongtien);
+              rows += `
+            <tr>
+              <td>${session.ghichu || ""}</td>
+              <td>${session.ngay ? formatDateDDMMYYYY(session.ngay) : ""}</td>
+              <td>${formatVND(d.tongtien)}</td>
+            </tr>`;
+            }
+          });
+        });
+
+        if (rows === "") {
+          body.innerHTML = `<tr><td colspan="3">✔ Không còn khoản nào chưa thanh toán.</td></tr>`;
+        } else {
+          body.innerHTML = rows;
+          totalBox.innerHTML = `
+        <tr style="font-weight:bold;background:#eef7ff">
+          <td colspan="2">Tổng</td>
+          <td>${formatVND(total)}</td>
+        </tr>`;
+        }
+      } catch (err) {
+        console.error(err);
+        body.innerHTML = `<tr><td colspan="3">❌ Lỗi tải dữ liệu!</td></tr>`;
       }
+    };
+
+    window.closeHistory = () => {
+      document.getElementById("historyModal").style.display = "none";
+    };
+
+    /* ------------------ LOGIN ------------------ */
+    window.login = () => signInWithPopup(auth, provider).catch(e => alert(e.message));
+    window.logout = () => signOut(auth);
+
+    onAuthStateChanged(auth, user => {
+      currentUser = user || null;
+      document.getElementById("user-info").textContent = user ? `👋 ${user.displayName}` : "";
+      document.getElementById("login-btn").classList.toggle("d-none", Boolean(user));
+      document.getElementById("logout-btn").classList.toggle("d-none", !user);
+      document.getElementById("admin-section").classList.toggle("d-none", !user || user.uid !== ADMIN_UID);
       loadData();
     });
+
+    function formatDateDDMMYYYY(dateStr) {
+      const d = new Date(dateStr);
+      const day = String(d.getDate()).padStart(2, '0');     // 2 chữ số cho ngày
+      const month = String(d.getMonth() + 1).padStart(2, '0'); // 2 chữ số cho tháng
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
   </script>
+
+  <!-- MODAL Lịch sử -->
+  <div id="historyModal" class="modal">
+    <div class="modal-content">
+      <h4>Lịch sử chưa thanh toán</h4>
+      <table class="table table-sm table-bordered mt-2">
+        <thead>
+          <tr>
+            <th>Buổi</th>
+            <th>Ngày</th>
+            <th>Số tiền</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+        <tfoot id="historyTotal"></tfoot>
+      </table>
+      <div class="text-end mt-2">
+        <button class="btn btn-secondary btn-sm" onclick="closeHistory()">Đóng</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 
 </html>
