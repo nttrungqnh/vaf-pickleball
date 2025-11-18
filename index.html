@@ -242,8 +242,9 @@
         </div>`;
         sessionsDiv.appendChild(col);
       }
-
+let grandTotal = 0;
       Object.entries(totals).sort((a, b) => b[1] - a[1]).forEach(([name, total]) => {
+        grandTotal += total;
          const tr = document.createElement("tr");
 
     // Nút tất toán chỉ admin
@@ -262,6 +263,17 @@
     summaryBody.appendChild(tr);
       });
 
+      if (grandTotal > 0) {
+  const tr = document.createElement("tr");
+  tr.style.fontWeight = "bold";
+  tr.style.background = "#f0f7ff";
+  tr.innerHTML = `
+    <td>Tổng tất cả</td>
+    <td>${formatVND(grandTotal)}</td>
+    <td></td>
+  `;
+  summaryBody.appendChild(tr);
+      }
       isLoading = false;
     }
 
